@@ -86,7 +86,21 @@ function place(name, x, y, w = 1) {
 }
 
 // ---- the mine ------------------------------------------------------------------
-const start = { x: 6, y: SURFACE }; // feet on top of this row
+const start = { x: 10, y: 111 }; // feet on top of this row - the bottom chamber
+const WATER_SPEED = 3; // px/s the flood rises
+const WATER_DELAY = 5; // seconds before it starts rising
+
+// Treasure: [kind, x, y] - the cell it sits in.
+const TREASURE = [
+  // Bottom chamber
+  ['tin', 3, 110], ['gold', 14, 106], ['jewel', 19, 103], ['tin', 27, 106], ['gold', 36, 110],
+  // Cavern (the gold over the chasm needs a well-timed jump from the ferry)
+  ['jewel', 35, 70], ['tin', 4, 72], ['gold', 20, 72],
+  // Passage by the elevator, and the zig-zag chamber
+  ['tin', 31, 60], ['gold', 10, 42], ['jewel', 27, 45], ['tin', 14, 54], ['gold', 23, 57],
+  // Level 2 and level 1 tunnels
+  ['tin', 6, 39], ['gold', 11, 18], ['jewel', 25, 17], ['tin', 36, 20],
+];
 
 // Surface + entrance ladder.
 ladder(18, SURFACE, 20);
@@ -143,7 +157,7 @@ crate(26, 107);
 for (let x = 13; x <= 23; x++) place('rail', x, 110);
 place('minecart', 16, 110, 2);
 place('pickaxe', 30, 110);
-place('skull', 11, 110);
+place('skull', 8, 110);
 frame(29, 32, 103, 110);
 place('lantern', 16, 96);
 
@@ -246,6 +260,10 @@ for (const [x, y] of crates) {
   fg[y + 1][x] = gid('crate_bl');
   fg[y + 1][x + 1] = gid('crate_br');
 }
+for (const [kind, x, y] of TREASURE) {
+  if (at(x, y) !== ' ' || reserved.has(key(x, y))) throw new Error(`treasure at ${x},${y} isn't in open space`);
+  place(kind, x, y);
+}
 for (const { name, x, y, w } of decor) {
   if (w === 2) {
     fg[y][x] = gid(`${name}_l`);
@@ -327,6 +345,11 @@ const objects = [
     id: objectId++, name: 'start', type: 'start', point: true,
     x: start.x * T + T / 2, y: start.y * T, width: 0, height: 0, rotation: 0, visible: true,
   },
+  // Reaching this area (the surface) escapes the mine.
+  {
+    id: objectId++, name: 'exit', type: 'exit',
+    x: 0, y: 0, width: W * T, height: SURFACE * T, rotation: 0, visible: true,
+  },
   ...elevators.map((e) => ({
     id: objectId++, name: '', type: 'elevator',
     x: e.x * T, y: e.y * T, width: e.w * T, height: T, rotation: 0, visible: true,
@@ -352,7 +375,12 @@ const map = {
   tileheight: T,
   nextlayerid: 4,
   nextobjectid: objectId,
-  properties: [prop('name', 'string', 'The Old Workings'), prop('surfaceRow', 'int', SURFACE)],
+  properties: [
+    prop('name', 'string', 'The Old Workings'),
+    prop('surfaceRow', 'int', SURFACE),
+    prop('waterDelay', 'float', WATER_DELAY),
+    prop('waterSpeed', 'float', WATER_SPEED),
+  ],
   tilesets: [{ firstgid: 1, source: '../assets/mine.tsj' }],
   layers: [
     layer(1, 'background', bg),
@@ -361,7 +389,7 @@ const map = {
   ],
 };
 writeFileSync(OUT, JSON.stringify(map));
-console.log(`wrote levels/old-workings.json (${W}x${H} tiles, ${elevators.length} elevators)`);
+console.log(`wrote levels/old-workings.json (${W}x${H} tiles, ${elevators.length} elevators, ${TREASURE.length} treasures)`);
 
 // Quick ASCII view of collision for sanity checks.
 if (process.argv.includes('--ascii')) {

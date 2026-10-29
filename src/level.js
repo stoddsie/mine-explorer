@@ -31,11 +31,14 @@ export class Level {
     const mapProps = props(map.properties);
     this.name = mapProps.name ?? 'Unnamed mine';
     this.surfaceRow = mapProps.surfaceRow ?? 0;
+    this.waterSpeed = mapProps.waterSpeed ?? 3;
+    this.waterDelay = mapProps.waterDelay ?? 5;
     this.firstgid = map.tilesets[0].firstgid;
 
     this.tileNames = new Map(); // tile id -> name
     this.tileIds = new Map(); // name -> tile id
     const collisionById = new Map();
+    const treasureById = new Map();
     for (const t of tileset.tiles ?? []) {
       const p = props(t.properties);
       if (p.name) {
@@ -43,20 +46,31 @@ export class Level {
         this.tileIds.set(p.name, t.id);
       }
       if (p.collision) collisionById.set(t.id, COLLISION[p.collision] ?? NONE);
+      if (p.treasure) treasureById.set(t.id, p.treasure);
     }
 
-    this.layers = map.layers.filter((l) => l.type === 'tilelayer');
+    // Copies, so pulling treasure out of the layer doesn't touch the imported map.
+    this.layers = map.layers.filter((l) => l.type === 'tilelayer').map((l) => ({ ...l, data: [...l.data] }));
     const fg = this.layers.find((l) => l.name === 'foreground') ?? this.layers[this.layers.length - 1];
     this.collision = new Uint8Array(this.width * this.height);
+    this.treasures = []; // { kind, c, r, gid } - drawn and collected by the game, not the map
     fg.data.forEach((gid, i) => {
       const id = (gid & GID_MASK) - this.firstgid;
-      if (gid) this.collision[i] = collisionById.get(id) ?? NONE;
+      if (!gid) return;
+      this.collision[i] = collisionById.get(id) ?? NONE;
+      if (treasureById.has(id)) {
+        this.treasures.push({ kind: treasureById.get(id), c: i % this.width, r: Math.floor(i / this.width), gid });
+        fg.data[i] = 0;
+      }
     });
 
     const objects = map.layers.filter((l) => l.type === 'objectgroup').flatMap((l) => l.objects);
     const kind = (o) => o.type ?? o.class ?? '';
     const start = objects.find((o) => o.name === 'start' || kind(o) === 'start');
     this.start = start ? { x: start.x, y: start.y } : { x: TILE * 2, y: TILE * 2 };
+    // Exit areas: reach one to escape. Without any, everything above the surface row counts.
+    this.exits = objects.filter((o) => kind(o) === 'exit').map((o) => ({ x: o.x, y: o.y, w: o.width, h: o.height }));
+    if (!this.exits.length) this.exits.push({ x: 0, y: -TILE * 4, w: this.pxW, h: this.surfaceRow * TILE + TILE * 4 });
     this.elevatorDefs = objects.filter((o) => kind(o) === 'elevator').map((o) => {
       const p = props(o.properties);
       return {
@@ -138,6 +152,14 @@ export class Level {
       }
     });
     return group;
+  }
+
+  // A single tile on its own canvas.
+  tileCanvas(gid) {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = TILE;
+    this.drawTile(canvas.getContext('2d'), gid, 0, 0);
+    return canvas;
   }
 
   // A strip of named tiles drawn side by side, e.g. an elevator car.

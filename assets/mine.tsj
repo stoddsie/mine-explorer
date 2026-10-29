@@ -569,6 +569,51 @@
    ]
   },
   {
+   "id": 43,
+   "properties": [
+    {
+     "name": "name",
+     "type": "string",
+     "value": "tin"
+    },
+    {
+     "name": "treasure",
+     "type": "string",
+     "value": "tin"
+    }
+   ]
+  },
+  {
+   "id": 44,
+   "properties": [
+    {
+     "name": "name",
+     "type": "string",
+     "value": "gold"
+    },
+    {
+     "name": "treasure",
+     "type": "string",
+     "value": "gold"
+    }
+   ]
+  },
+  {
+   "id": 45,
+   "properties": [
+    {
+     "name": "name",
+     "type": "string",
+     "value": "jewel"
+    },
+    {
+     "name": "treasure",
+     "type": "string",
+     "value": "jewel"
+    }
+   ]
+  },
+  {
    "id": 48,
    "properties": [
     {

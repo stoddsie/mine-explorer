@@ -1,13 +1,11 @@
 // Generates the starter tilesheet (assets/mine-tiles.png) and its Tiled tileset (assets/mine.tsj).
 //
-//   npm run tiles            - writes both, but won't overwrite an existing PNG
-//   npm run tiles -- --force - regenerate the PNG too (loses any hand edits!)
-//
-// Once you start editing mine-tiles.png in a paint program, this script is only
-// needed again if you add new tiles here and want their names/collision in mine.tsj.
-import { writeFileSync, existsSync } from 'node:fs';
+//   npm run tiles            - rewrites mine.tsj; tiles are only drawn into empty (fully
+//                              transparent) slots of an existing PNG, so hand edits are kept
+//   npm run tiles -- --force - repaint every tile from the bitmaps here (loses hand edits!)
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { encodePNG } from './png.mjs';
+import { encodePNG, decodePNG } from './png.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const T = 8;
@@ -25,7 +23,7 @@ const INK = {
   w: 0xd7d7d7, W: 0xffffff,
 };
 
-// Each piece: [name, col, row, collision, bitmap]. Pieces bigger than 8x8 are split into
+// Each piece: [name, col, row, collision, bitmap, extra tile properties?]. Pieces bigger than 8x8 are split into
 // tiles named name_tl/_tr/_bl/_br (2x2), name_l/_r (2x1) or name_t/_b (1x2).
 // collision: 'solid' (blocks every side), 'platform' (stand on, jump up through),
 // 'ladder' (climbable), or null (decoration). layer is just a hint for map painting.
@@ -403,6 +401,39 @@ const PIECES = [
     'y.......',
   ]],
 
+  // ---- treasure: picked up by the player; the game removes them from the map ----
+  ['tin', 11, 2, null, [
+    '........',
+    '........',
+    '..WWWW..',
+    '.WwwwwW.',
+    'WWWWWWWW',
+    'WwwwwwwW',
+    'WWWWWWWW',
+    '........',
+  ], { treasure: 'tin' }],
+  ['gold', 12, 2, null, [
+    '........',
+    '...YY...',
+    '..YYyY..',
+    '.YyYYYY.',
+    '.YYYYyY.',
+    'YYyYYYYY',
+    '.YYYYYy.',
+    '........',
+  ], { treasure: 'gold' }],
+  // Drawn white: the game tints jewels through flashing colours.
+  ['jewel', 13, 2, null, [
+    '........',
+    '..WWWW..',
+    '.W.WW.W.',
+    'WWWWWWWW',
+    '.W.WW.W.',
+    '..W..W..',
+    '...WW...',
+    '........',
+  ], { treasure: 'jewel' }],
+
   // ---- background (blue) ------------------------------------------------
   ['bgrock_a', 0, 3, null, [
     '........',
@@ -577,19 +608,35 @@ const SUFFIXES = {
 };
 
 const ROWS = Math.max(...PIECES.map(([, , row, , bmp]) => row + bmp.length / T));
-const width = COLUMNS * T;
-const height = ROWS * T;
+const pngPath = `${ROOT}assets/mine-tiles.png`;
+const force = process.argv.includes('--force');
+const existing = existsSync(pngPath) && !force ? decodePNG(readFileSync(pngPath)) : null;
+const width = Math.max(COLUMNS * T, existing?.width ?? 0);
+const height = Math.max(ROWS * T, existing?.height ?? 0);
 const pixels = new Uint8Array(width * height * 4);
+if (existing) {
+  for (let y = 0; y < existing.height; y++) {
+    pixels.set(existing.pixels.subarray(y * existing.width * 4, (y + 1) * existing.width * 4), y * width * 4);
+  }
+}
+// Is this pixel rectangle completely transparent (nothing drawn there yet)?
+const emptyRect = (x0, y0, w, h) => {
+  for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) if (pixels[(y * width + x) * 4 + 3]) return false;
+  return true;
+};
 const used = new Set();
 const tiles = [];
+const added = [];
 
-for (const [name, col, row, collision, bmp] of PIECES) {
+for (const [name, col, row, collision, bmp, extra = {}] of PIECES) {
   const tw = bmp[0].length / T;
   const th = bmp.length / T;
   if (!Number.isInteger(tw) || !Number.isInteger(th) || bmp.some((l) => l.length !== bmp[0].length)) {
     throw new Error(`${name}: bitmap must be a whole number of 8x8 tiles with equal row lengths`);
   }
-  bmp.forEach((line, y) => {
+  const paint = !existing || emptyRect(col * T, row * T, bmp[0].length, bmp.length);
+  if (paint && existing) added.push(name);
+  if (paint) bmp.forEach((line, y) => {
     for (let x = 0; x < line.length; x++) {
       const ch = line[x];
       if (ch === '.') continue;
@@ -609,18 +656,18 @@ for (const [name, col, row, collision, bmp] of PIECES) {
       used.add(id);
       const properties = [{ name: 'name', type: 'string', value: names[ty * tw + tx] }];
       if (collision) properties.push({ name: 'collision', type: 'string', value: collision });
+      for (const [k, v] of Object.entries(extra)) properties.push({ name: k, type: 'string', value: v });
       tiles.push({ id, properties });
     }
   }
 }
 tiles.sort((a, b) => a.id - b.id);
 
-const pngPath = `${ROOT}assets/mine-tiles.png`;
-if (existsSync(pngPath) && !process.argv.includes('--force')) {
-  console.log('assets/mine-tiles.png exists - left untouched (use --force to regenerate)');
+if (existing && !added.length) {
+  console.log('assets/mine-tiles.png already has every tile - left untouched');
 } else {
   writeFileSync(pngPath, encodePNG(width, height, pixels));
-  console.log(`wrote assets/mine-tiles.png (${width}x${height})`);
+  console.log(existing ? `added to assets/mine-tiles.png: ${added.join(', ')}` : `wrote assets/mine-tiles.png (${width}x${height})`);
 }
 
 // ---- player sprite strip: 8x16 frames, facing right ---------------------------
@@ -669,7 +716,7 @@ const tileset = {
   spacing: 0,
   margin: 0,
   columns: COLUMNS,
-  tilecount: COLUMNS * ROWS,
+  tilecount: COLUMNS * (height / T),
   image: 'mine-tiles.png',
   imagewidth: width,
   imageheight: height,

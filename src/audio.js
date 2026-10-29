@@ -26,6 +26,7 @@ const arpeggio = (notes, step) => notes.forEach((f, i) => tone(f, f, step, { del
 
 export const sfx = {
   jump: () => tone(220, 660, 0.18, { vol: 0.03 }),
+  bubble: () => tone(500, 250, 0.08, { vol: 0.03 }),
   collect: () => { tone(880, 880, 0.05); tone(1320, 1320, 0.08, { delay: 0.05 }); },
   die: () => tone(700, 40, 0.8, { type: 'sawtooth', vol: 0.06 }),
   gate: () => arpeggio([523, 659, 784, 1047], 0.09),
